@@ -1,7 +1,7 @@
-import asyncio
 import logging
-import functools
+import asyncio
 import sys
+from asyncio import StreamWriter, StreamReader
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -10,51 +10,35 @@ logging.basicConfig(
 )
 
 SERVER_ADDRESS = ('localhost', 8080)
+log = logging.getLogger('Client')
 
 
-class ClientClass(asyncio.Protocol):
+async def clientConenction(loop):
+    reader, writer = await asyncio.open_connection(*SERVER_ADDRESS, loop=loop)
+    tasks = [nonBlocking_dataSender(writer), nonBlocking_dataReceiver(reader)]
+    await asyncio.gather(*tasks)
 
-    def __init__(self, future, message=None):
-        self.log = logging.getLogger('client')
-        self.message = message
-        self.f = future
 
-    def connection_made(self, transport) -> None:
-        self.transport = transport
-        self.address = self.transport.get_extra_info('peername')
-        self.log.debug("Connection made to: {:s}:{:d}".format(*self.address))
-        self.transport.write("Hello, world!".encode())
-        print(self.ainput())
-        if self.transport.can_write_eof():
-            self.transport.write_eof()
+async def nonBlocking_dataSender(writer: StreamWriter):
+    while True:
+        output = await asyncio.get_event_loop().run_in_executor(
+            None, sys.stdin.readline
+        )
+        writer.write(output.encode())
 
-    def data_received(self, data: bytes) -> None:
-        self.log.debug("Message: {!r}".format(data))
 
-    def connection_lost(self, exc) -> None:
-        self.transport.close()
-        if not self.f.done():
-            self.f.set_result(True)
-        super().connection_lost(exc)
-
-    async def ainput(self):
-        return await asyncio.get_event_loop().run_in_executor(
-            None, sys.stdin.readline)
+async def nonBlocking_dataReceiver(reader: StreamReader):
+    while True:
+        data = await reader.read(1024)
+        if not data:
+            log.debug('Connection closed.')
+            return
+        log.debug(data.decode().strip('\n'))
 
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
-    client_completed = asyncio.Future()
-    client_factory = functools.partial(
-        ClientClass,
-        future=client_completed
-    )
-    factory_coro = loop.create_connection(
-        client_factory,
-        *SERVER_ADDRESS,
-    )
     try:
-        loop.run_until_complete(factory_coro)
-        loop.run_until_complete(client_completed)
+        loop.run_until_complete(clientConenction(loop))
     finally:
         loop.close()

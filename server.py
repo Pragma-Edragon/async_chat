@@ -27,11 +27,12 @@ class ConnectionServer(asyncio.Protocol):
         log.debug('Connection from: {}'.format(self.address))
 
         # need all users receive this
+        #
         # connections contains
         # list of objects
         for user in connections:
             if user != self:
-                self.send("<N> user arrived!".encode())
+                user.send("<{}> has arrived!".format(self.address).encode())
 
     def data_received(self, data: bytes) -> None:
         # After establishing connection this method
@@ -45,18 +46,20 @@ class ConnectionServer(asyncio.Protocol):
         log.debug("Message: {}:\t{}".format(self.address, data.decode()))
         for user in connections:
             if user != self:
-                self.send(data)
+                user.send("<{}> {}".format(self.address, data.decode()).encode())
 
     def connection_lost(self, error) -> None:
         # When connection is closed
         # either normally or with error,
         # this method called
 
-        # if error occurred - exc contains
+        # if error occurred - error contains
         # exception information in () format
         log.debug("Connection lost from: {}".format(self.address))
 
         connections.remove(self)
+        for user in connections:
+            user.send("<{}> Left chat".format(self.address).encode())
         super().connection_lost(error)
 
     def send(self, message: bytes) -> None:
