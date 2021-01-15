@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import re
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -13,6 +14,12 @@ connections = []
 
 
 class ConnectionServer(asyncio.Protocol):
+
+    def __init__(self):
+        self.mode = None
+        self.name = None
+        self.address = None
+        self.addressed_to = None
 
     def connection_made(self, transport) -> None:
         # Each client connection triggers this method
@@ -33,6 +40,8 @@ class ConnectionServer(asyncio.Protocol):
         for user in connections:
             if user != self:
                 user.send("<{}> has arrived!".format(self.address).encode())
+            else:
+                self.send("Use /register <login: between 3 and 10 characters or symbols> to continue".encode())
 
     def data_received(self, data: bytes) -> None:
         # After establishing connection this method
@@ -41,12 +50,35 @@ class ConnectionServer(asyncio.Protocol):
         # After - sending response to client
         # that requested any type of data
 
-        # need to register /whisper command.
-        # /whisper <username or hostname>
-        log.debug("Message: {}:\t{}".format(self.address, data.decode()))
-        for user in connections:
-            if user != self:
-                user.send("<{}> {}".format(self.address, data.decode()).encode())
+        if self.mode == "Public" and re.match("^\/", data.decode()) is not None:
+            # for commands
+            if data.decode().strip(' ') == '/help':
+                pass
+            if re.match(r'^\/whisper [0-9A-Za-z]{3,10}', data.decode()):
+                name = data.decode().split()[1]
+                if self.name == name:
+                    self.send("Looks like you whispered to yourself... But no one will answer! :(".encode())
+                else:
+                    for user in connections:
+                        if user.name == name:
+                            self.mode = "Whisper"
+                            self.send("Mode set to whisper. Now you can write, no one will se it!".encode())
+                            user.send("<{}@{}> whispered to you!".format(self.name, self.address).encode())
+                            self.addressed_to = user
+                            break
+                        else:
+                            self.send("No users with this name found...".encode())
+                            break
+            else:
+                self.send("Error in command: {}".format(data.decode()).encode())
+        elif self.mode == "Public":
+            self.multiple_send("<{}@{}> {}".format(self.name, self.address, data.decode()).encode())
+        elif self.mode == "Whisper":
+            print("IN WHISPER MODE!")
+        elif not self.mode:
+            self.register(data)
+
+        log.debug("Message: {}:\t{}\tMode: {}".format(self.address, data.decode(), self.mode))
 
     def connection_lost(self, error) -> None:
         # When connection is closed
@@ -58,12 +90,35 @@ class ConnectionServer(asyncio.Protocol):
         log.debug("Connection lost from: {}".format(self.address))
 
         connections.remove(self)
-        for user in connections:
-            user.send("<{}> Left chat".format(self.address).encode())
+        self.multiple_send("<{}> Left chat".format(self.address).encode())
         super().connection_lost(error)
 
     def send(self, message: bytes) -> None:
         self.transport.write(message)
+
+    def multiple_send(self, pattern: bytes):
+        for user in connections:
+            if user != self:
+                user.send(pattern)
+
+    def register(self, data: bytes):
+        print(re.match(r'^\/register [0-9A-Za-z]{3,10}', data.decode()))
+        if re.match(r'^\/register [0-9A-Za-z]{3,10}', data.decode()) is not None:
+            self.mode = "Public"
+            self.name = data.decode().split()[1]
+            self.send("Registered successfully".encode())
+            self.multiple_send("<{}@{}> Registered".format(self.name, self.address).encode())
+        else:
+            self.send("Use /register <[3-10] symbols>".encode())
+
+    def pregMatch(self, compare_string: str, compared_string: str) -> bool:
+        percents = 0
+        for compare_letter, compared_letter in zip(compare_string, compared_string):
+            if compare_letter == compared_letter:
+                percents += 100/len(compared_string)
+        if percents >= 80:
+            return True
+        return False
 
 
 if __name__ == '__main__':
