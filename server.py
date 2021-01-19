@@ -50,33 +50,32 @@ class ConnectionServer(asyncio.Protocol):
         # After - sending response to client
         # that requested any type of data
 
-        if self.mode == "Public" and re.match("^\/", data.decode()) is not None:
-            # for commands
+        if re.match("^\/", data.decode()) is not None:
             if data.decode().strip(' ') == '/help':
-                pass
-            if re.match(r'^\/whisper [0-9A-Za-z]{3,10}', data.decode()):
-                name = data.decode().split()[1]
-                if self.name == name:
-                    self.send("Looks like you whispered to yourself... But no one will answer! :(".encode())
-                else:
-                    for user in connections:
-                        if user.name == name:
-                            self.mode = "Whisper"
-                            self.send("Mode set to whisper. Now you can write, no one will se it!".encode())
-                            user.send("<{}@{}> whispered to you!".format(self.name, self.address).encode())
-                            self.addressed_to = user
-                            break
-                        else:
-                            self.send("No users with this name found...".encode())
-                            break
+                self.send("/register <username> - register user by his name. Min len - 3, max - 10,\n"
+                          "/help - use it to see this message,\n"
+                          "/whisper <username>- use this to PM someone,\n"
+                          "/stop whisper <username> - stopping PM mode for current user and set your mode to Public".encode())
+            if self.mode == "Public":
+                if re.match(r'^\/whisper [0-9A-Za-z]{3,10}', data.decode()):
+                    name = data.decode().split()[1]
+                    if self.name == name:
+                        self.send("Looks like you whispered to yourself... But no one will answer! :(".encode())
+                    else:
+                        self.set_whisper_mode(name=name, mode=True)
+            elif self.mode == "Whisper":
+                if re.match(r'^\/stop whisper [0-9A-Za-z]{3,10}', data.decode()):
+                    # ending whisper for current user
+                    name = data.decode().split()[2]
+                    self.set_whisper_mode(name=name, mode=False)
             else:
-                self.send("Error in command: {}".format(data.decode()).encode())
+                self.register(data)
+
         elif self.mode == "Public":
             self.multiple_send("<{}@{}> {}".format(self.name, self.address, data.decode()).encode())
         elif self.mode == "Whisper":
             print("IN WHISPER MODE!")
-        elif not self.mode:
-            self.register(data)
+            self.addressed_to.send(data)
 
         log.debug("Message: {}:\t{}\tMode: {}".format(self.address, data.decode(), self.mode))
 
@@ -103,11 +102,21 @@ class ConnectionServer(asyncio.Protocol):
 
     def register(self, data: bytes):
         print(re.match(r'^\/register [0-9A-Za-z]{3,10}', data.decode()))
-        if re.match(r'^\/register [0-9A-Za-z]{3,10}', data.decode()) is not None:
-            self.mode = "Public"
-            self.name = data.decode().split()[1]
-            self.send("Registered successfully".encode())
-            self.multiple_send("<{}@{}> Registered".format(self.name, self.address).encode())
+        match = re.match(r'^\/register [0-9A-Za-z]{3,10}', data.decode())
+        if match is not None:
+            if len(match.group()) == len(data.decode().strip('\n')):
+                for user in connections:
+                    if user.name is not None:
+                        if user.name.replace('\n', '') == data.decode().split(' ')[1].replace('\n',
+                                                                                              '') and user != self:
+                            self.send('User with this name already exists!'.encode())
+                            return
+                self.mode = "Public"
+                self.name = data.decode().split()[1]
+                self.send("Registered successfully".encode())
+                self.multiple_send("<{}@{}> Registered".format(self.name, self.address).encode())
+            else:
+                self.send("Use /register <[3-10] symbols>".encode())
         else:
             self.send("Use /register <[3-10] symbols>".encode())
 
@@ -115,10 +124,27 @@ class ConnectionServer(asyncio.Protocol):
         percents = 0
         for compare_letter, compared_letter in zip(compare_string, compared_string):
             if compare_letter == compared_letter:
-                percents += 100/len(compared_string)
+                percents += 100 / len(compared_string)
         if percents >= 80:
             return True
         return False
+
+    def set_whisper_mode(self, name: str, mode: bool) -> None:
+        if mode:
+            for user in connections:
+                if user.name == name:
+                    self.mode = "Whisper"
+                    self.send("Mode set to whisper. Now you can write, no one will se it!".encode())
+                    user.send("<{}@{}> whispered to you!".format(self.name, self.address).encode())
+                    self.addressed_to = user
+        else:
+            if self.addressed_to.name == name:
+                self.mode = "Public"
+                self.send("Mode set to Public. Now you can chat with others!".encode())
+                self.addressed_to.send("{} quited PM".format(self.name).encode())
+                return
+            else:
+                self.send("No users with this name found...".encode())
 
 
 if __name__ == '__main__':
