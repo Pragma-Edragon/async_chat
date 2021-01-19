@@ -153,8 +153,8 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
 
     # getting coroutine object
-    log.debug("Serving server on: <localhost:8080>")
-    coro = loop.create_server(ConnectionServer, host='localhost', port=8080)
+    log.debug("Serving server on: <0.0.0.0:9090>")
+    coro = loop.create_server(ConnectionServer, host='0.0.0.0', port=9090)
 
     # run the Future to get it's result
     server = loop.run_until_complete(coro)
