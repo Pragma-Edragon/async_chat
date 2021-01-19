@@ -51,11 +51,13 @@ class ConnectionServer(asyncio.Protocol):
         # that requested any type of data
 
         if re.match("^\/", data.decode()) is not None:
-            if data.decode().strip(' ') == '/help':
+            if data.decode().strip('\n') == '/help':
                 self.send("/register <username> - register user by his name. Min len - 3, max - 10,\n"
                           "/help - use it to see this message,\n"
                           "/whisper <username>- use this to PM someone,\n"
                           "/stop whisper <username> - stopping PM mode for current user and set your mode to Public".encode())
+            if data.decode().strip('\n') == '/whoami':
+                self.send("Your name on server: {}, \nYour connection data: {}".format(self.name, self.address).encode())
             if self.mode == "Public":
                 if re.match(r'^\/whisper [0-9A-Za-z]{3,10}', data.decode()):
                     name = data.decode().split()[1]
